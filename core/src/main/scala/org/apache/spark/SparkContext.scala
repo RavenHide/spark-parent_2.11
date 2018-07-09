@@ -498,6 +498,8 @@ class SparkContext(config: SparkConf) extends Logging {
       HeartbeatReceiver.ENDPOINT_NAME, new HeartbeatReceiver(this))
 
     // Create and start the scheduler
+    // 在这里创建 DAGScheduler 和 TaskScheduler
+    // 由于 DAGScheduler 的构造函数需要一个 TaskSchduler 实例， 所以先执行 TaskSchduler 的创建
     val (sched, ts) = SparkContext.createTaskScheduler(this, master, deployMode)
     _schedulerBackend = sched
     _taskScheduler = ts

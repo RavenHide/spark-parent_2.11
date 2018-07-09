@@ -27,6 +27,7 @@ private[spark] trait SchedulerBackend {
 
   def start(): Unit
   def stop(): Unit
+  // 通过reviveOffers 完成对task调度包括资源分配和执行task的runTask
   def reviveOffers(): Unit
   def defaultParallelism(): Int
 
