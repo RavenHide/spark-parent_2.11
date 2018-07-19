@@ -85,6 +85,11 @@ public class TransportServer implements Closeable {
     return port;
   }
 
+  /**
+   * 创建ServerBoostrap并进行初始化，然后启动
+   * @param hostToBind
+   * @param portToBind
+   */
   private void init(String hostToBind, int portToBind) {
 
     IOMode ioMode = IOMode.valueOf(conf.ioMode());

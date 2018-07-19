@@ -100,7 +100,7 @@ public class TransportFrameDecoder extends ChannelInboundHandlerAdapter {
     if (first.readableBytes() >= LENGTH_SIZE) {
       nextFrameSize = first.readLong() - LENGTH_SIZE;
       totalSize -= LENGTH_SIZE;
-      if (!first.isReadable()) {
+      if (!first.isReadable()) { // 如果byteBuf只有 8 字节(LENGTH_SIZE)，就认为已经读完了，把他从linkedList中移除
         buffers.removeFirst().release();
       }
       return nextFrameSize;

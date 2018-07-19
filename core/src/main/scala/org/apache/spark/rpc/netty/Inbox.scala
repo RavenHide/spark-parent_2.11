@@ -77,12 +77,14 @@ private[netty] class Inbox(
   private var numActiveThreads = 0
 
   // OnStart should be the first message to process
+  // inbox实例化的时候，会把一个onStart事件加入到消息队列
   inbox.synchronized {
     messages.add(OnStart)
   }
 
   /**
    * Process stored messages.
+    * 处理message队列里面的message
    */
   def process(dispatcher: Dispatcher): Unit = {
     var message: InboxMessage = null

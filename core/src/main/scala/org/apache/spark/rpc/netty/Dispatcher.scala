@@ -64,11 +64,14 @@ private[netty] class Dispatcher(nettyEnv: NettyRpcEnv) extends Logging {
       if (stopped) {
         throw new IllegalStateException("RpcEnv has been stopped")
       }
+      // 通过name 和 endpoint 以及 endpointRef 来实例化一个 EndpointData, 并存到 endpoints(concurrentMap)里面
       if (endpoints.putIfAbsent(name, new EndpointData(name, endpoint, endpointRef)) != null) {
         throw new IllegalArgumentException(s"There is already an RpcEndpoint called $name")
       }
       val data = endpoints.get(name)
+      // 再把 endpoint 和 endpointRef 建立映射关系，存到 endpointRefs
       endpointRefs.put(data.endpoint, data.ref)
+      // 最后把endpointData加入到receives队列, 会在MessageLoop(一个Runnable对象，在threadpool初始化时启动)里面取出，并处理endpointData
       receivers.offer(data)  // for the OnStart message
     }
     endpointRef
@@ -125,6 +128,7 @@ private[netty] class Dispatcher(nettyEnv: NettyRpcEnv) extends Logging {
   def postLocalMessage(message: RequestMessage, p: Promise[Any]): Unit = {
     val rpcCallContext =
       new LocalNettyRpcCallContext(message.senderAddress, p)
+    // 把消息封装成RpcMessage
     val rpcMessage = RpcMessage(message.senderAddress, message.content, rpcCallContext)
     postMessage(message.receiver.name, rpcMessage, (e) => p.tryFailure(e))
   }
@@ -210,6 +214,7 @@ private[netty] class Dispatcher(nettyEnv: NettyRpcEnv) extends Logging {
               receivers.offer(PoisonPill)
               return
             }
+            // inbox 主要是处理本地RPC通讯
             data.inbox.process(Dispatcher.this)
           } catch {
             case NonFatal(e) => logError(e.getMessage, e)

@@ -68,12 +68,13 @@ import static org.apache.spark.network.util.NettyUtils.getRemoteAddress;
  * responsible for handling responses from the server.
  *
  * Concurrency: thread safe and can be called from multiple threads.
+ * TransportClient 主要是功能是往服务器发送消息，然后通过TransportResponseHandler来接收服务端返回的消息
  */
 public class TransportClient implements Closeable {
   private static final Logger logger = LoggerFactory.getLogger(TransportClient.class);
 
   private final Channel channel;
-  private final TransportResponseHandler handler;
+  private final TransportResponseHandler handler; // 接受来自服务器的回应
   @Nullable private String clientId;
   private volatile boolean timedOut;
 
@@ -217,6 +218,9 @@ public class TransportClient implements Closeable {
     }
 
     long requestId = Math.abs(UUID.randomUUID().getLeastSignificantBits());
+    // 把requestId 和 这个requeset 对应的callback 建立映射关系，存到outstandingRpcs 里面
+    // 在 TransportResponseHanddler 里面，接收到对方的对现在这个request的回应时， 会从 outstandingRpcs 里面 通过 requestId
+    // 拿到 callback，然后进行回调通知
     handler.addRpcRequest(requestId, callback);
 
     channel.writeAndFlush(new RpcRequest(requestId, new NioManagedBuffer(message)))

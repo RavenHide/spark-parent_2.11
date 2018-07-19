@@ -117,10 +117,15 @@ class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val rpcEnv: Rp
         }
       }, 0, reviveIntervalMs, TimeUnit.MILLISECONDS)
     }
-
+  // 处理endpointRef.send或者RpcCallContext.reply的返回
     override def receive: PartialFunction[Any, Unit] = {
+
+      // executor任务执行完后，发送StatusUpdate来通知driver
       case StatusUpdate(executorId, taskId, state, data) =>
+
+        //driver端进行task任务完成的处理
         scheduler.statusUpdate(taskId, state, data.value)
+
         if (TaskState.isFinished(state)) {
           executorDataMap.get(executorId) match {
             case Some(executorInfo) =>
@@ -133,6 +138,7 @@ class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val rpcEnv: Rp
           }
         }
 
+      //为tasks进行资源分配
       case ReviveOffers =>
         makeOffers()
 
@@ -151,10 +157,11 @@ class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val rpcEnv: Rp
           killExecutors(exec.toSeq, replace = true, force = true)
         }
     }
-
+    // 处理RpcEndpointRef.ask
     override def receiveAndReply(context: RpcCallContext): PartialFunction[Any, Unit] = {
-
+      // 向集群注册executor请求的返回
       case RegisterExecutor(executorId, executorRef, hostname, cores, logUrls) =>
+
         if (executorDataMap.contains(executorId)) {
           executorRef.send(RegisterExecutorFailed("Duplicate executor ID: " + executorId))
           context.reply(true)
@@ -230,13 +237,16 @@ class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val rpcEnv: Rp
       // Make sure no executor is killed while some task is launching on it
       val taskDescs = CoarseGrainedSchedulerBackend.this.synchronized {
         // Filter out executors under killing
+        // 过滤已经loss或者待移除的executor
         val activeExecutors = executorDataMap.filterKeys(executorIsAlive)
         val workOffers = activeExecutors.map { case (id, executorData) =>
           new WorkerOffer(id, executorData.executorHost, executorData.freeCores)
         }.toIndexedSeq
+        // 为每个Task分配计算机资源
         scheduler.resourceOffers(workOffers)
       }
       if (!taskDescs.isEmpty) {
+        // 执行task
         launchTasks(taskDescs)
       }
     }
@@ -296,7 +306,7 @@ class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val rpcEnv: Rp
 
           logDebug(s"Launching task ${task.taskId} on executor id: ${task.executorId} hostname: " +
             s"${executorData.executorHost}.")
-
+          //把launchTask事件发送到executor，然后executor会调用task的runTask方法开始执行任务
           executorData.executorEndpoint.send(LaunchTask(new SerializableBuffer(serializedTask)))
         }
       }
@@ -380,6 +390,7 @@ class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val rpcEnv: Rp
 
   protected def createDriverEndpointRef(
       properties: ArrayBuffer[(String, String)]): RpcEndpointRef = {
+    // 把endpoint 注册到 dispatch 并返回 endpointRef
     rpcEnv.setupEndpoint(ENDPOINT_NAME, createDriverEndpoint(properties))
   }
 

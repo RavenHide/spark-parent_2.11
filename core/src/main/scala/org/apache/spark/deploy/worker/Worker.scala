@@ -190,20 +190,27 @@ private[deploy] class Worker(
     }
   }
 
+  /**
+    * worker的start
+    */
   override def onStart() {
     assert(!registered)
     logInfo("Starting Spark worker %s:%d with %d cores, %s RAM".format(
       host, port, cores, Utils.megabytesToString(memory)))
     logInfo(s"Running Spark version ${org.apache.spark.SPARK_VERSION}")
     logInfo("Spark home: " + sparkHome)
+    // 根据SPARK_WORKER_DIR来创建一个worker目录，默认会创建一个 SPARK_HOME/worker 的目录
     createWorkDir()
     shuffleService.startIfEnabled()
+    // webUi初始化
     webUi = new WorkerWebUI(this, workDir, webUiPort)
+    // 启动一个http服务器
     webUi.bind()
 
     workerWebUiUrl = s"http://$publicAddress:${webUi.boundPort}"
+    // 向master注册自己
     registerWithMaster()
-
+    // 度量系统，会定时把source的数据更新到sink方，用于集群状态监控
     metricsSystem.registerSource(workerSource)
     metricsSystem.start()
     // Attach the worker metrics servlet handler to the web ui after the metrics system is started.
@@ -229,15 +236,23 @@ private[deploy] class Worker(
       logInfo(s"WorkerWebUI is available at $activeMasterWebUiUrl/proxy/$workerId")
     }
     // Cancel any outstanding re-registration attempts because we found a new master
+    // 取消其它master注册事件，因为已经成功注册了
     cancelLastRegistrationRetry()
   }
 
+  /**
+    * 因为master由于HA机制，可能会有1个或者多个standBy的master，为了在故障切换的时候能快速进行切换，这里要向所有的master注册？
+    * 还是因为不是知道哪个master是active状态，而向所有master发送注册消息
+    * @return
+    */
   private def tryRegisterAllMasters(): Array[JFuture[_]] = {
     masterRpcAddresses.map { masterAddress =>
       registerMasterThreadPool.submit(new Runnable {
         override def run(): Unit = {
           try {
             logInfo("Connecting to master " + masterAddress + "...")
+            // 向master发送一个rpcOutboxMessage，来确定master是否可用；如果可用就设置master的endpointRef对象，
+            // 如果等待超时，master 没有返回消息，就抛异常
             val masterEndpoint = rpcEnv.setupEndpointRef(masterAddress, Master.ENDPOINT_NAME)
             sendRegisterMessageToMaster(masterEndpoint)
           } catch {
@@ -348,7 +363,7 @@ private[deploy] class Worker(
     registrationRetryTimer match {
       case None =>
         registered = false
-        registerMasterFutures = tryRegisterAllMasters()
+        registerMasterFutures = tryRegisterAllMasters() // 向所有 master 尝试进行注册
         connectionAttemptCount = 0
         registrationRetryTimer = Some(forwordMessageScheduler.scheduleAtFixedRate(
           new Runnable {
@@ -379,6 +394,7 @@ private[deploy] class Worker(
 
   private def handleRegisterResponse(msg: RegisterWorkerResponse): Unit = synchronized {
     msg match {
+        // 接受master发送的注册成功事件
       case RegisteredWorker(masterRef, masterWebUiUrl, masterAddress) =>
         if (preferConfiguredMasterAddress) {
           logInfo("Successfully registered with master " + masterAddress.toSparkURL)
@@ -386,13 +402,15 @@ private[deploy] class Worker(
           logInfo("Successfully registered with master " + masterRef.address.toSparkURL)
         }
         registered = true
+        // 更新worker指向的master, 同时停止其它的master注册的future和定时注册的定时器
         changeMaster(masterRef, masterWebUiUrl, masterAddress)
+        // 开始定时发送心跳
         forwordMessageScheduler.scheduleAtFixedRate(new Runnable {
           override def run(): Unit = Utils.tryLogNonFatalError {
-            self.send(SendHeartbeat)
+            self.send(SendHeartbeat) // 先把心跳发送到自己的inbox里面，然后在endpoint的receive里面再发送给master
           }
         }, 0, HEARTBEAT_MILLIS, TimeUnit.MILLISECONDS)
-        if (CLEANUP_ENABLED) {
+        if (CLEANUP_ENABLED) { //是否启动定时清理workDir, 主要是删除那些已经不再运行的application产生的文件
           logInfo(
             s"Worker cleanup enabled; old application directories will be deleted in: $workDir")
           forwordMessageScheduler.scheduleAtFixedRate(new Runnable {
@@ -401,10 +419,13 @@ private[deploy] class Worker(
             }
           }, CLEANUP_INTERVAL_MILLIS, CLEANUP_INTERVAL_MILLIS, TimeUnit.MILLISECONDS)
         }
-
+        // 获取当前worker 管理的 executors
         val execs = executors.values.map { e =>
           new ExecutorDescription(e.appId, e.execId, e.cores, e.state)
         }
+        // 然后把worker管理的driver或者executor发送给master，进行状态更新
+        // 如果driver 或者executor 不存在于 master 端的记录表，master就会发送一个 KillDriver / KillExecurot 来告诉worker要把
+        // 不合法的driver 或者 executor 杀死
         masterRef.send(WorkerLatestState(workerId, execs.toList, drivers.keys.toSeq))
 
       case RegisterWorkerFailed(message) =>
@@ -759,8 +780,14 @@ private[deploy] object Worker extends Logging {
     // The LocalSparkCluster runs multiple local sparkWorkerX RPC Environments
     val systemName = SYSTEM_NAME + workerNumber.map(_.toString).getOrElse("")
     val securityMgr = new SecurityManager(conf)
+    // 跟master启动一样，实例化一个serverBoostrap，然后启动，
     val rpcEnv = RpcEnv.create(systemName, host, port, conf, securityMgr)
     val masterAddresses = masterUrls.map(RpcAddress.fromSparkURL(_))
+    // 把endpoint实例通过dispatch.register()进行注册,通过endpoint生成endpointData,
+    // 然后把endpointData加入receives队列，对receives队列的成员进行MessageLoop
+    // tip：在endpointData实例化时，会实例化一个inbox的成员变量，inbox在实例化的时候，会给inbox的messages加入一个onStart()事件
+    // 在MessageLoop会监听加入的receive，也是endpointData，然后执行endpointData.inbox.process();
+    // 也就是说 rpc.setupEndpoint(..)最终会启动一个onStart(..)事件
     rpcEnv.setupEndpoint(ENDPOINT_NAME, new Worker(rpcEnv, webUiPort, cores, memory,
       masterAddresses, ENDPOINT_NAME, workDir, conf, securityMgr))
     rpcEnv

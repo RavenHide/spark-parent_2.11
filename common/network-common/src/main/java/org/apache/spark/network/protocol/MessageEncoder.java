@@ -77,6 +77,13 @@ public final class MessageEncoder extends MessageToMessageEncoder<Message> {
     // All messages have the frame length, message type, and message itself. The frame length
     // may optionally include the length of the body data, depending on what message is being
     // sent.
+    /**
+     *
+     * |--------------|------------------------|-----------------|
+     * |  消息长度    | Message.Type的字节长度 |  Message的长度   |
+     * |-------------|-----------------------|-----------------|
+     */
+
     int headerLength = 8 + msgType.encodedLength() + in.encodedLength();
     long frameLength = headerLength + (isBodyInFrame ? bodyLength : 0);
     ByteBuf header = ctx.alloc().heapBuffer(headerLength);

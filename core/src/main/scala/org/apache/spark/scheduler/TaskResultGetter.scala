@@ -63,6 +63,8 @@ private[spark] class TaskResultGetter(sparkEnv: SparkEnv, scheduler: TaskSchedul
         try {
           val (result, size) = serializer.get().deserialize[TaskResult[_]](serializedData) match {
             case directResult: DirectTaskResult[_] =>
+              // 判断返回来的结果是否超过'spark.driver.maxResultSize'(默认：1G)设定的值
+              // 如果超过把当前task标志为failed，并且taskSetManager设为zombie，可能会中止整个taskset
               if (!taskSetManager.canFetchMoreResults(serializedData.limit())) {
                 return
               }
@@ -72,13 +74,15 @@ private[spark] class TaskResultGetter(sparkEnv: SparkEnv, scheduler: TaskSchedul
               directResult.value(taskResultSerializer.get())
               (directResult, serializedData.limit())
             case IndirectTaskResult(blockId, size) =>
-              if (!taskSetManager.canFetchMoreResults(size)) {
+              //存在远程worker上BlockManager的内容，需要通过网络去获取
+              if (!taskSetManager.canFetchMoreResults(size)) {//大小超过配置值,发生错误
                 // dropped by executor if size is larger than maxResultSize
-                sparkEnv.blockManager.master.removeBlock(blockId)
+                sparkEnv.blockManager.master.removeBlock(blockId)//删除远程worker上的结果
                 return
               }
               logDebug("Fetching indirect task result for TID %s".format(tid))
               scheduler.handleTaskGettingResult(taskSetManager, tid)
+              // 获取远程worker上计算结果
               val serializedTaskResult = sparkEnv.blockManager.getRemoteBytes(blockId)
               if (!serializedTaskResult.isDefined) {
                 /* We won't be able to get the task result if the machine that ran the task failed

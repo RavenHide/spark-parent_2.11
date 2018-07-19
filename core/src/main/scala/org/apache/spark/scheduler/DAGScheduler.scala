@@ -1137,6 +1137,7 @@ class DAGScheduler(
   /**
    * Responds to a task finishing. This is called inside the event loop so it assumes that it can
    * modify the scheduler's internal state. Use taskEnded() to post a task end event from outside.
+    * 处理task返回的结果
    */
   private[scheduler] def handleTaskCompletion(event: CompletionEvent) {
     val task = event.task
@@ -1180,19 +1181,22 @@ class DAGScheduler(
     val stage = stageIdToStage(task.stageId)
     event.reason match {
       case Success =>
+        // 对task 类型进行模式匹配
         task match {
           case rt: ResultTask[_, _] =>
             // Cast to ResultStage here because it's part of the ResultTask
             // TODO Refactor this out to a function that accepts a ResultStage
             val resultStage = stage.asInstanceOf[ResultStage]
             resultStage.activeJob match {
+                // 对job的类型进行模式匹配
               case Some(job) =>
-                if (!job.finished(rt.outputId)) {
+                // job.finished:Array[Boolean],用来查看哪些partition完成情况
+                if (!job.finished(rt.outputId)) {//更新task的完成情况
                   updateAccumulators(event)
                   job.finished(rt.outputId) = true
                   job.numFinished += 1
                   // If the whole job has finished, remove it
-                  if (job.numFinished == job.numPartitions) {
+                  if (job.numFinished == job.numPartitions) {//如果所有task已经完成
                     markStageAsFinished(resultStage)
                     cleanupStateForJobAndIndependentStages(job)
                     listenerBus.post(
@@ -1202,6 +1206,7 @@ class DAGScheduler(
                   // taskSucceeded runs some user code that might throw an exception. Make sure
                   // we are resilient against that.
                   try {
+                    // 这里的job.listener，就是在submitJob的时候生成的JobWaiter，这里回调JobWaiter的taskSucceeded来通知task的结果
                     job.listener.taskSucceeded(rt.outputId, event.result)
                   } catch {
                     case e: Exception =>
@@ -1243,7 +1248,8 @@ class DAGScheduler(
               // still has tasks running.
               shuffleStage.pendingPartitions -= task.partitionId
             }
-
+            // 如果当前shuffleStage被标志为running，并且它的pendingPartition已经为空，说明shuffleStage的所有task已经完成
+            // 这个时候得更新shuffleStage的状态为"完成"，并且把结果注册到mapOutputTracker，方便下游获取shuffle的结果
             if (runningStages.contains(shuffleStage) && shuffleStage.pendingPartitions.isEmpty) {
               markStageAsFinished(shuffleStage)
               logInfo("looking for newly runnable stages")
@@ -1270,6 +1276,7 @@ class DAGScheduler(
                 logInfo("Resubmitting " + shuffleStage + " (" + shuffleStage.name +
                   ") because some of its tasks had failed: " +
                   shuffleStage.findMissingPartitions().mkString(", "))
+                // 部分task失败，需要进行重新提交
                 submitStage(shuffleStage)
               } else {
                 // Mark any map-stage jobs waiting on this stage as finished
@@ -1279,6 +1286,7 @@ class DAGScheduler(
                     markMapStageJobAsFinished(job, stats)
                   }
                 }
+                // 执行子stage
                 submitWaitingChildStages(shuffleStage)
               }
             }
@@ -1310,6 +1318,7 @@ class DAGScheduler(
           if (runningStages.contains(failedStage)) {
             logInfo(s"Marking $failedStage (${failedStage.name}) as failed " +
               s"due to a fetch failure from $mapStage (${mapStage.name})")
+            // 更新stage的标志
             markStageAsFinished(failedStage, Some(failureMessage))
           } else {
             logDebug(s"Received fetch failure from $task, but its from $failedStage which is no " +
@@ -1317,6 +1326,7 @@ class DAGScheduler(
           }
 
           failedStage.fetchFailedAttemptIds.add(task.stageAttemptId)
+          // 根据最大连尝试数量的值来判断是否中止stage
           val shouldAbortStage =
             failedStage.fetchFailedAttemptIds.size >= maxConsecutiveStageAttempts ||
             disallowStageRetryForTest

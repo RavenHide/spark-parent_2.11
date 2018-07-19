@@ -82,7 +82,10 @@ private[spark] abstract class YarnSchedulerBackend(
   override def start() {
     require(appId.isDefined, "application ID unset")
     val binding = SchedulerExtensionServiceBinding(sc, appId.get, attemptId)
+    // 根据配置文件‘spark.yarn.services’ 反射出 一组相应的实例，并bind sparkContext 和 appid等内容,
+    // 然后把这些实例存到 services 的 services: List[SchedulerExtensionService] 里面
     services.start(binding)
+    // 创建 endpointRef 和 endpoint
     super.start()
   }
 

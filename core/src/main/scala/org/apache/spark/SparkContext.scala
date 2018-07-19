@@ -508,6 +508,7 @@ class SparkContext(config: SparkConf) extends Logging {
 
     // start TaskScheduler after taskScheduler sets DAGScheduler reference in DAGScheduler's
     // constructor
+    // 主要是启动SchedulerBackend
     _taskScheduler.start()
 
     _applicationId = _taskScheduler.applicationId()
@@ -2690,6 +2691,7 @@ object SparkContext extends Logging {
   /**
    * Create a task scheduler based on a given master URL.
    * Return a 2-tuple of the scheduler backend and the task scheduler.
+   *  根据传入的 deployMode 会创建相应的 TaskSchedulerImpl 的子孙类实例和 SchedulerBackend 的 子孙类实例
    */
   private def createTaskScheduler(
       sc: SparkContext,
@@ -2757,6 +2759,7 @@ object SparkContext extends Logging {
         (backend, scheduler)
 
       case masterUrl =>
+        // 外部集群对应的TaskScheduler和schedulerBackend，如yarn集群
         val cm = getClusterManager(masterUrl) match {
           case Some(clusterMgr) => clusterMgr
           case None => throw new SparkException("Could not parse Master URL: '" + master + "'")

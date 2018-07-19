@@ -111,6 +111,7 @@ public class TransportContext {
   /** Create a server which will attempt to bind to a specific host and port. */
   public TransportServer createServer(
       String host, int port, List<TransportServerBootstrap> bootstraps) {
+    // TransportServer 的构造函数会进行init（）初始化serverBoostrap并启动
     return new TransportServer(this, host, port, rpcHandler, bootstraps);
   }
 
@@ -143,6 +144,7 @@ public class TransportContext {
       SocketChannel channel,
       RpcHandler channelRpcHandler) {
     try {
+      // 创建一个handler来处理boostrap的请求和返回
       TransportChannelHandler channelHandler = createChannelHandler(channel, channelRpcHandler);
       channel.pipeline()
         .addLast("encoder", ENCODER)
@@ -165,6 +167,7 @@ public class TransportContext {
    * properties (such as the remoteAddress()) may not be available yet.
    */
   private TransportChannelHandler createChannelHandler(Channel channel, RpcHandler rpcHandler) {
+    // 把netty的pipline的handler分成两部分：requestHandler 和 responseHandler
     TransportResponseHandler responseHandler = new TransportResponseHandler(channel);
     TransportClient client = new TransportClient(channel, responseHandler);
     TransportRequestHandler requestHandler = new TransportRequestHandler(channel, client,
