@@ -26,6 +26,7 @@ import org.apache.spark.util.{ChildFirstURLClassLoader, MutableURLClassLoader, U
 /**
  * Utility object for launching driver programs such that they share fate with the Worker process.
  * This is used in standalone cluster mode only.
+  * 用来启动 driver 的类
  */
 object DriverWrapper {
   def main(args: Array[String]) {
@@ -38,10 +39,12 @@ object DriverWrapper {
        */
       case workerUrl :: userJar :: mainClass :: extraArgs =>
         val conf = new SparkConf()
+        // 创建一个driver 的RpcEnv
         val rpcEnv = RpcEnv.create("Driver",
           Utils.localHostName(), 0, conf, new SecurityManager(conf))
         rpcEnv.setupEndpoint("workerWatcher", new WorkerWatcher(rpcEnv, workerUrl))
 
+        // 加载需要的jar包
         val currentLoader = Thread.currentThread.getContextClassLoader
         val userJarUrl = new File(userJar).toURI().toURL()
         val loader =
@@ -53,6 +56,7 @@ object DriverWrapper {
         Thread.currentThread.setContextClassLoader(loader)
 
         // Delegate to supplied main class
+        // 启动我们业务代码里面的 main 方法
         val clazz = Utils.classForName(mainClass)
         val mainMethod = clazz.getMethod("main", classOf[Array[String]])
         mainMethod.invoke(null, extraArgs.toArray[String])

@@ -29,6 +29,12 @@ import org.slf4j.LoggerFactory;
 /**
  * Decoder used by the client side to encode server-to-client responses.
  * This encoder is stateless so it is safe to be shared by multiple threads.
+ *
+ *  *  消息的结构
+ * |--------------|------------------------|-----------------|-----------------|
+ * |  消息长度    | Message.Type的字节长度 |  Message的长度  |    消息内容
+ * |-------------|-----------------------|-----------------|-----------------|
+ *
  */
 @ChannelHandler.Sharable
 public final class MessageDecoder extends MessageToMessageDecoder<ByteBuf> {

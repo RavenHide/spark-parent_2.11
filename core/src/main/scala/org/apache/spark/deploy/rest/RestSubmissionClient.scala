@@ -83,13 +83,17 @@ private[spark] class RestSubmissionClient(master: String) extends Logging {
     var handled: Boolean = false
     var response: SubmitRestProtocolResponse = null
     for (m <- masters if !handled) {
+      // 验证master 地址是否合法
       validateMaster(m)
+      // 拿到一个提交的地址
       val url = getSubmitUrl(m)
       try {
+        // 把request转成json，并序列化从byte数组，然后发送http请求到服务端来上传资源
         response = postJson(url, request.toJson)
         response match {
           case s: CreateSubmissionResponse =>
             if (s.success) {
+              // 给user 报告提交情况
               reportSubmissionStatus(s)
               handleRestResponse(s)
               handled = true
@@ -136,7 +140,8 @@ private[spark] class RestSubmissionClient(master: String) extends Logging {
     response
   }
 
-  /** Request the status of a submission from the server. */
+  /** Request the status of a submission from the server.
+    *  向RestSubmissionServer 发送一个查询 submission状态 请求*/
   def requestSubmissionStatus(
       submissionId: String,
       quiet: Boolean = false): SubmitRestProtocolResponse = {
@@ -148,10 +153,12 @@ private[spark] class RestSubmissionClient(master: String) extends Logging {
       validateMaster(m)
       val url = getStatusUrl(m, submissionId)
       try {
+        // 发送请求
         response = get(url)
         response match {
           case s: SubmissionStatusResponse if s.success =>
             if (!quiet) {
+              // 就是个打印response内容的方法，所以quiet来当trigger
               handleRestResponse(s)
             }
             handled = true
@@ -320,6 +327,7 @@ private[spark] class RestSubmissionClient(master: String) extends Logging {
       val submissionId = submitResponse.submissionId
       if (submissionId != null) {
         logInfo(s"Submission successfully created as $submissionId. Polling submission state...")
+        // 向server 查询 submission的状态，并打印输出 driver 和 driver 所在的worker 的信息
         pollSubmissionStatus(submissionId)
       } else {
         // should never happen
@@ -337,7 +345,9 @@ private[spark] class RestSubmissionClient(master: String) extends Logging {
    */
   private def pollSubmissionStatus(submissionId: String): Unit = {
     (1 to REPORT_DRIVER_STATUS_MAX_TRIES).foreach { _ =>
+      // 向server 查询 submission的状态
       val response = requestSubmissionStatus(submissionId, quiet = true)
+
       val statusResponse = response match {
         case s: SubmissionStatusResponse => s
         case _ => return // unexpected type, let upstream caller handle it
@@ -407,6 +417,7 @@ private[spark] object RestSubmissionClient {
       appArgs: Array[String],
       conf: SparkConf,
       env: Map[String, String] = Map()): SubmitRestProtocolResponse = {
+    // 获取master 地址
     val master = conf.getOption("spark.master").getOrElse {
       throw new IllegalArgumentException("'spark.master' must be set.")
     }
@@ -414,6 +425,7 @@ private[spark] object RestSubmissionClient {
     val client = new RestSubmissionClient(master)
     val submitRequest = client.constructSubmitRequest(
       appResource, mainClass, appArgs, sparkProperties, env)
+    // 发送message 到 Master 端的RestSubmissionServer
     client.createSubmission(submitRequest)
   }
 
@@ -427,6 +439,7 @@ private[spark] object RestSubmissionClient {
     val appArgs = args.slice(2, args.length)
     val conf = new SparkConf
     val env = filterSystemEnvironment(sys.env)
+    // 开始启动client
     run(appResource, mainClass, appArgs, conf, env)
   }
 

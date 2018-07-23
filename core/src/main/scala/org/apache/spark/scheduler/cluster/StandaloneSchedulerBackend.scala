@@ -63,6 +63,7 @@ private[spark] class StandaloneSchedulerBackend(
     // mode. In cluster mode, the code that submits the application to the Master needs to connect
     // to the launcher instead.
     if (sc.deployMode == "client") {
+      // 读取socket 信息
       launcherBackend.connect()
     }
 
@@ -98,6 +99,7 @@ private[spark] class StandaloneSchedulerBackend(
     // Start executors with a few necessary configs for registering with the scheduler
     val sparkJavaOpts = Utils.sparkJavaOpts(conf, SparkConf.isExecutorStartupConf)
     val javaOpts = sparkJavaOpts ++ extraJavaOpts
+    // 用来启动executor 的命令
     val command = Command("org.apache.spark.executor.CoarseGrainedExecutorBackend",
       args, sc.executorEnvs, classPathEntries ++ testingClassPath, libraryPathEntries, javaOpts)
     val webUrl = sc.ui.map(_.webUrl).getOrElse("")
@@ -112,7 +114,9 @@ private[spark] class StandaloneSchedulerBackend(
       }
     val appDesc = ApplicationDescription(sc.appName, maxCores, sc.executorMemory, command,
       webUrl, sc.eventLogDir, sc.eventLogCodec, coresPerExecutor, initialExecutorLimit)
+    // 初始化一个 client
     client = new StandaloneAppClient(sc.env.rpcEnv, masters, appDesc, this, conf)
+    // 设置endpont， 然后处理onStart（），向 master 发送一个 applicationRegisted 事件
     client.start()
     launcherBackend.setState(SparkAppHandle.State.SUBMITTED)
     waitForRegistration()

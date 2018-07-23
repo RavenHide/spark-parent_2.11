@@ -166,6 +166,7 @@ private[rest] class StandaloneSubmitRequestServlet(
    *
    * This assumes that the request message is already successfully validated.
    * If the request message is not of the expected type, return error to the client.
+    *  处理RestSubmissionCilent的 CrateSubmissionRequest请求
    */
   protected override def handleSubmit(
       requestMessageJson: String,
@@ -173,9 +174,14 @@ private[rest] class StandaloneSubmitRequestServlet(
       responseServlet: HttpServletResponse): SubmitRestProtocolResponse = {
     requestMessage match {
       case submitRequest: CreateSubmissionRequest =>
+        // 根据 提交的application相关的内容来构建 driverDescription
         val driverDescription = buildDriverDescription(submitRequest)
+
+        // 进入阻塞，直到接收到master的回应
         val response = masterEndpoint.askSync[DeployMessages.SubmitDriverResponse](
           DeployMessages.RequestSubmitDriver(driverDescription))
+
+        // 给RestSubmissionClient 返回提交情况
         val submitResponse = new CreateSubmissionResponse
         submitResponse.serverSparkVersion = sparkVersion
         submitResponse.message = response.message

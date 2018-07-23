@@ -89,6 +89,7 @@ private[deploy] class DriverRunner(
           }
 
           // prepare driver jars and run driver
+          // 准备driver 启动需要的jars，然后启动它
           val exitCode = prepareAndRunDriver()
 
           // set final state depending on if forcibly killed and process exit code
@@ -152,6 +153,7 @@ private[deploy] class DriverRunner(
     val localJarFile = new File(driverDir, jarFileName)
     if (!localJarFile.exists()) { // May already exist if running multiple workers on one node
       logInfo(s"Copying user jar ${driverDesc.jarUrl} to $localJarFile")
+      // 执行下载
       Utils.fetchFile(
         driverDesc.jarUrl,
         driverDir,
@@ -168,9 +170,13 @@ private[deploy] class DriverRunner(
     localJarFile.getAbsolutePath
   }
 
+  /**
+    * 准备 driver 的运行环境并启动
+    * @return
+    */
   private[worker] def prepareAndRunDriver(): Int = {
-    val driverDir = createWorkingDirectory()
-    val localJarFilename = downloadUserJar(driverDir)
+    val driverDir = createWorkingDirectory() //创建工作目录
+    val localJarFilename = downloadUserJar(driverDir) // 下载driver 依赖的jar
 
     def substituteVariables(argument: String): String = argument match {
       case "{{WORKER_URL}}" => workerUrl
@@ -215,6 +221,7 @@ private[deploy] class DriverRunner(
 
       synchronized {
         if (killed) { return exitCode }
+        // 启动 driver 进程, driver 进程执行我们自己的写scala 的main方法
         process = Some(command.start())
         initialize(process.get)
       }

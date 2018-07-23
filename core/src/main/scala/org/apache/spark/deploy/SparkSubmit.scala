@@ -150,6 +150,7 @@ object SparkSubmit extends CommandLineUtils {
    */
   @tailrec
   private def submit(args: SparkSubmitArguments): Unit = {
+    // 准备classPath，系统参数和application的参数
     val (childArgs, childClasspath, sysProps, childMainClass) = prepareSubmitEnvironment(args)
 
     def doRunMain(): Unit = {
@@ -224,6 +225,7 @@ object SparkSubmit extends CommandLineUtils {
     var childMainClass = ""
 
     // Set the cluster manager
+    // 确定master 类型
     val clusterManager: Int = args.master match {
       case "yarn" => YARN
       case "yarn-client" | "yarn-cluster" =>
@@ -239,6 +241,7 @@ object SparkSubmit extends CommandLineUtils {
     }
 
     // Set the deploy mode; default is client mode
+    // 确定运行模式
     var deployMode: Int = args.deployMode match {
       case "client" | null => CLIENT
       case "cluster" => CLUSTER
@@ -262,6 +265,7 @@ object SparkSubmit extends CommandLineUtils {
       }
 
       // Make sure YARN is included in our build if we're trying to use it
+      // 因为集群模式是yarn ，所以这里要检查classpath 是否有 yarn 相关的jar
       if (!Utils.classIsLoadable("org.apache.spark.deploy.yarn.Client") && !Utils.isTesting) {
         printErrorAndExit(
           "Could not load YARN classes. " +
@@ -280,6 +284,7 @@ object SparkSubmit extends CommandLineUtils {
 
     // Resolve maven dependencies if there are any and add classpath to jars. Add them to py-files
     // too for packages that include Python code
+    // 对应这个配置项 spark.jars.excludes
     val exclusions: Seq[String] =
       if (!StringUtils.isBlank(args.packagesExclusions)) {
         args.packagesExclusions.split(",")
@@ -670,6 +675,8 @@ object SparkSubmit extends CommandLineUtils {
    *
    * Note that this main class will not be the one provided by the user if we're
    * running cluster deploy mode or python applications.
+    *
+    *  准备好运行环境后，开始执行
    */
   private def runMain(
       childArgs: Seq[String],
@@ -709,6 +716,7 @@ object SparkSubmit extends CommandLineUtils {
     var mainClass: Class[_] = null
 
     try {
+      // 反射得到 mainClass
       mainClass = Utils.classForName(childMainClass)
     } catch {
       case e: ClassNotFoundException =>
@@ -735,7 +743,7 @@ object SparkSubmit extends CommandLineUtils {
     if (classOf[scala.App].isAssignableFrom(mainClass)) {
       printWarning("Subclasses of scala.App may not work correctly. Use a main() method instead.")
     }
-
+    // 反射拿到 main
     val mainMethod = mainClass.getMethod("main", new Array[String](0).getClass)
     if (!Modifier.isStatic(mainMethod.getModifiers)) {
       throw new IllegalStateException("The main method in the given main class must be static")
@@ -752,6 +760,7 @@ object SparkSubmit extends CommandLineUtils {
     }
 
     try {
+      // 启动main
       mainMethod.invoke(null, childArgs.toArray)
     } catch {
       case t: Throwable =>

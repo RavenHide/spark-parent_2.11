@@ -486,6 +486,7 @@ private[deploy] class Worker(
       logInfo(s"Master with url $masterUrl requested this worker to reconnect.")
       registerWithMaster()
 
+    // 启动 executor
     case LaunchExecutor(masterUrl, appId, execId, appDesc, cores_, memory_) =>
       if (masterUrl != activeMasterUrl) {
         logWarning("Invalid Master (" + masterUrl + ") attempted to launch executor.")
@@ -494,6 +495,7 @@ private[deploy] class Worker(
           logInfo("Asked to launch executor %s/%d for %s".format(appId, execId, appDesc.name))
 
           // Create the executor's working directory
+          // 创建executor 的工作目录
           val executorDir = new File(workDir, appId + "/" + execId)
           if (!executorDir.mkdirs()) {
             throw new IOException("Failed to create directory " + executorDir)
@@ -521,7 +523,9 @@ private[deploy] class Worker(
             }
             dirs
           })
+          // appLocalDirs 可能是新创建的，所以这里要进行一次映射
           appDirectories(appId) = appLocalDirs
+          // 跟启动driver 一样，都有一个 xxxxxRunner
           val manager = new ExecutorRunner(
             appId,
             execId,
@@ -539,9 +543,16 @@ private[deploy] class Worker(
             conf,
             appLocalDirs, ExecutorState.RUNNING)
           executors(appId + "/" + execId) = manager
+
+          // 启动master
+          // 跟启动driver 一样，会启动一个新的线程去启动executor，然后线程挂起，直到executor异常或者退出
           manager.start()
+
+          // 跟启动driver 一样，会更新现有资源
           coresUsed += cores_
           memoryUsed += memory_
+
+          // 告诉master，executor已经RUNNING
           sendToMaster(ExecutorStateChanged(appId, execId, manager.state, None, None))
         } catch {
           case e: Exception =>
@@ -554,7 +565,7 @@ private[deploy] class Worker(
               Some(e.toString), None))
         }
       }
-
+    // 当前 executor 因任务完成或者异常而退出时，会给worker 发送一个ExecutorStateChanged 事件
     case executorStateChanged @ ExecutorStateChanged(appId, execId, state, message, exitStatus) =>
       handleExecutorStateChanged(executorStateChanged)
 
@@ -571,7 +582,7 @@ private[deploy] class Worker(
             logInfo("Asked to kill unknown executor " + fullId)
         }
       }
-
+    // 从 master 端接受到一个 LaunchDriver 事件，接着会在当前worker 所在的节点启动一个
     case LaunchDriver(driverId, driverDesc) =>
       logInfo(s"Asked to launch driver $driverId")
       val driver = new DriverRunner(
@@ -583,9 +594,12 @@ private[deploy] class Worker(
         self,
         workerUri,
         securityMgr)
+      // 把driver 记录到管理表 drivers 里面
       drivers(driverId) = driver
+      // 当启动driver 时，会new 一个thread 来启动它，启动成功就会阻塞这个 thread， 除非 退出driver 退出或者启动异常，才
+      // 解除阻塞，并执行一些driver 结束时的处理
       driver.start()
-
+      // 更新当前worker 已经使用的资源
       coresUsed += driverDesc.cores
       memoryUsed += driverDesc.mem
 

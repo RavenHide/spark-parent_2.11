@@ -159,7 +159,7 @@ class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val rpcEnv: Rp
     }
     // 处理RpcEndpointRef.ask
     override def receiveAndReply(context: RpcCallContext): PartialFunction[Any, Unit] = {
-      // 向集群注册executor请求的返回
+      // 接收到CoarseGrainedExecutorBackend 发送过来的 RegisterExecutor 事件
       case RegisterExecutor(executorId, executorRef, hostname, cores, logUrls) =>
 
         if (executorDataMap.contains(executorId)) {
@@ -222,10 +222,11 @@ class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val rpcEnv: Rp
         // We will remove the executor's state and cannot restore it. However, the connection
         // between the driver and the executor may be still alive so that the executor won't exit
         // automatically, so try to tell the executor to stop itself. See SPARK-13519.
+        // 发送一个停止executor 的事件
         executorDataMap.get(executorId).foreach(_.executorEndpoint.send(StopExecutor))
         removeExecutor(executorId, reason)
         context.reply(true)
-
+      //  CoarseGrainedExecutorBackend 发送的 获取appConfig 的请求
       case RetrieveSparkAppConfig =>
         val reply = SparkAppConfig(sparkProperties,
           SparkEnv.get.securityManager.getIOEncryptionKey())
@@ -306,7 +307,7 @@ class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val rpcEnv: Rp
 
           logDebug(s"Launching task ${task.taskId} on executor id: ${task.executorId} hostname: " +
             s"${executorData.executorHost}.")
-          //把launchTask事件发送到executor，然后executor会调用task的runTask方法开始执行任务
+          //把launchTask事件发送到executor，然后executor最终会调用task的runTask方法开始执行任务
           executorData.executorEndpoint.send(LaunchTask(new SerializableBuffer(serializedTask)))
         }
       }
@@ -327,6 +328,7 @@ class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val rpcEnv: Rp
           }
           totalCoreCount.addAndGet(-executorInfo.totalCores)
           totalRegisteredExecutors.addAndGet(-1)
+          // taskSchedulerImpl 更新 executor，并重新给executor分配资源，执行executor 的任务
           scheduler.executorLost(executorId, if (killed) ExecutorKilled else reason)
           listenerBus.post(
             SparkListenerExecutorRemoved(System.currentTimeMillis(), executorId, reason.toString))

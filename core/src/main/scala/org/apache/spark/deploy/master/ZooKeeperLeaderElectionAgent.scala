@@ -40,6 +40,14 @@ private[master] class ZooKeeperLeaderElectionAgent(val masterInstance: LeaderEle
     zk = SparkCuratorUtil.newClient(conf)
     leaderLatch = new LeaderLatch(zk, WORKING_DIR)
     leaderLatch.addListener(this)
+    // leaderLatch 通过start（），会启动一个连接zookeeper的阻塞任务， 连接成功后，
+    // 执行一个 Runnable{ internalStart() -> reset() -> 执行异步任务，最终回调BackgroundCallback}
+    // 在BackgroundCallback.processResult(){..... getChildren() -> checkLeadership()->setLeadership(true) }，
+    // setLeadership(true)会调用 LeaderLatchListener.notLeader()
+    // LeaderLatchListener.notLeader() 也就是上面的那个leaderLatch.addListener(this)的实现
+    // 我们可以看到当前类的 notLeader()实现，它会在leaderLatch.setLeadership（）被回调
+    // 如果我们是初次启动 master， 因为还没有leader， 所以应该会调用这个 masterInstance.electedLeader()
+
     leaderLatch.start()
   }
 

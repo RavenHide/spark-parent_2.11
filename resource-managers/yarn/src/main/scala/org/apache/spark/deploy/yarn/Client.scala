@@ -149,27 +149,32 @@ private[spark] class Client(
       // so we have don't have issues at any point.
       setupCredentials()
       yarnClient.init(yarnConf)
+      // 启动 yarnClient 的客户端
       yarnClient.start()
 
       logInfo("Requesting a new application from cluster with %d NodeManagers"
         .format(yarnClient.getYarnClusterMetrics.getNumNodeManagers))
 
       // Get a new application from our RM
+      // 向resourceManager 申请创建一个 application
       val newApp = yarnClient.createApplication()
       val newAppResponse = newApp.getNewApplicationResponse()
       appId = newAppResponse.getApplicationId()
-
+      //
       new CallerContext("CLIENT", sparkConf.get(APP_CALLER_CONTEXT),
         Option(appId.toString)).setCurrentContext()
 
       // Verify whether the cluster has enough resources for our AM
+      // 验证ResourceManager 是否有足够的资源
       verifyClusterResources(newAppResponse)
 
       // Set up the appropriate contexts to launch our AM
+      // 创建一个container 来运行 appMaster
       val containerContext = createContainerLaunchContext(newAppResponse)
       val appContext = createApplicationSubmissionContext(newApp, containerContext)
 
       // Finally, submit and monitor the application
+      // 提交任务到 resourceManager
       logInfo(s"Submitting application $appId to ResourceManager")
       yarnClient.submitApplication(appContext)
       launcherBackend.setAppId(appId.toString)
@@ -304,6 +309,7 @@ private[spark] class Client(
         "Please check the values of 'yarn.scheduler.maximum-allocation-mb' and/or " +
         "'yarn.nodemanager.resource.memory-mb'.")
     }
+    // driver 的内存
     val amMem = amMemory + amMemoryOverhead
     if (amMem > maxMem) {
       throw new IllegalArgumentException(s"Required AM memory ($amMemory" +
@@ -1086,6 +1092,7 @@ private[spark] class Client(
    * Otherwise, the client process will exit after submission.
    * If the application finishes with a failed, killed, or undefined status,
    * throw an appropriate SparkException.
+    * 把资源提交给resourcesManager
    */
   def run(): Unit = {
     this.appId = submitApplication()
@@ -1130,6 +1137,9 @@ private[spark] class Client(
 
 }
 
+/**
+  * yarn 集群模式启动
+  */
 private object Client extends Logging {
 
   def main(argStrings: Array[String]) {

@@ -37,6 +37,16 @@ import org.apache.spark.scheduler.cluster.CoarseGrainedClusterMessages._
 import org.apache.spark.serializer.SerializerInstance
 import org.apache.spark.util.{ThreadUtils, Utils}
 
+/**
+  * 用来启动executor的类
+  * @param rpcEnv
+  * @param driverUrl
+  * @param executorId
+  * @param hostname
+  * @param cores
+  * @param userClassPath
+  * @param env
+  */
 private[spark] class CoarseGrainedExecutorBackend(
     override val rpcEnv: RpcEnv,
     driverUrl: String,
@@ -77,9 +87,11 @@ private[spark] class CoarseGrainedExecutorBackend(
   }
 
   override def receive: PartialFunction[Any, Unit] = {
+    // 接收到 DriverEndpont 的回应RegisteredExecutor的事件
     case RegisteredExecutor =>
       logInfo("Successfully registered with driver")
       try {
+        // 初始化 executor，executor是执行Task的具体对象
         executor = new Executor(executorId, hostname, env, userClassPath, isLocal = false)
       } catch {
         case NonFatal(e) =>
@@ -89,6 +101,7 @@ private[spark] class CoarseGrainedExecutorBackend(
     case RegisterExecutorFailed(message) =>
       exitExecutor(1, "Slave registration failed: " + message)
 
+    // 收到DriverEndpoint 的LaunchTask 事件，开始执行Task
     case LaunchTask(data) =>
       if (executor == null) {
         exitExecutor(1, "Received LaunchTask command but executor was null")
@@ -200,11 +213,13 @@ private[spark] object CoarseGrainedExecutorBackend extends Logging {
         new SecurityManager(executorConf),
         clientMode = true)
       val driver = fetcher.setupEndpointRefByURI(driverUrl)
+      // 向driver 进行通讯，拿到SparkAppConfig相关的配置
       val cfg = driver.askSync[SparkAppConfig](RetrieveSparkAppConfig)
       val props = cfg.sparkProperties ++ Seq[(String, String)](("spark.app.id", appId))
       fetcher.shutdown()
 
       // Create SparkEnv using properties we fetched from the driver.
+      // 开始进行配置
       val driverConf = new SparkConf()
       for ((key, value) <- props) {
         // this is required for SSL in standalone mode
@@ -219,10 +234,10 @@ private[spark] object CoarseGrainedExecutorBackend extends Logging {
           driverConf.get("spark.yarn.credentials.file"))
         SparkHadoopUtil.get.startCredentialUpdater(driverConf)
       }
-
+      // 创建executor的rpcEnv
       val env = SparkEnv.createExecutorEnv(
         driverConf, executorId, hostname, port, cores, cfg.ioEncryptionKey, isLocal = false)
-
+      // 设置Endpoint，会触发onStart()，
       env.rpcEnv.setupEndpoint("Executor", new CoarseGrainedExecutorBackend(
         env.rpcEnv, driverUrl, executorId, hostname, cores, userClassPath, env))
       workerUrl.foreach { url =>

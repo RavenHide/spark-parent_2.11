@@ -56,6 +56,15 @@ public class TransportFrameDecoder extends ChannelInboundHandlerAdapter {
   private long nextFrameSize = UNKNOWN_FRAME_SIZE;
   private volatile Interceptor interceptor;
 
+  /**
+   *   消息的结构
+   * |--------------|------------------------|-----------------|-----------------|
+   * |  消息长度    | Message.Type的字节长度 |  Message的长度  |    消息内容
+   * |-------------|-----------------------|-----------------|-----------------|
+   * 消息长度: long 8字节
+   * Message.Type的字节长度: byte 1字节
+   */
+
   @Override
   public void channelRead(ChannelHandlerContext ctx, Object data) throws Exception {
     ByteBuf in = (ByteBuf) data;
@@ -78,10 +87,12 @@ public class TransportFrameDecoder extends ChannelInboundHandlerAdapter {
         totalSize -= read;
       } else {
         // Interceptor is not active, so try to decode one frame.
+        // 根据消息长度，读取 (Message.Type的字节长度 |  Message的长度  |    消息内容)的长度的byte数组进入frame
         ByteBuf frame = decodeNext();
         if (frame == null) {
           break;
         }
+        // 把frame往channelPipline 的下一个handler传递, 这里应该是往MessageDecoder() 传递
         ctx.fireChannelRead(frame);
       }
     }

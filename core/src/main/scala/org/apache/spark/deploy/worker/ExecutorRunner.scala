@@ -138,6 +138,7 @@ private[deploy] class ExecutorRunner(
 
   /**
    * Download and run the executor described in our ApplicationDescription
+    * 启动过程跟LanuchDriver 很类似，可以类比参考
    */
   private def fetchAndRunExecutor() {
     try {
@@ -161,9 +162,11 @@ private[deploy] class ExecutorRunner(
         } else {
           s"http://$publicAddress:$webUiPort/logPage/?appId=$appId&executorId=$execId&logType="
         }
+      // 配置日志输出路径
       builder.environment.put("SPARK_LOG_URL_STDERR", s"${baseUrl}stderr")
       builder.environment.put("SPARK_LOG_URL_STDOUT", s"${baseUrl}stdout")
 
+      // 启动进程
       process = builder.start()
       val header = "Spark Executor Command: %s\n%s\n\n".format(
         formattedCommand, "=" * 40)
@@ -178,9 +181,11 @@ private[deploy] class ExecutorRunner(
 
       // Wait for it to exit; executor may exit with code 0 (when driver instructs it to shutdown)
       // or with nonzero exit code
+      // 进入阻塞，线程挂起，直到异常或者退出
       val exitCode = process.waitFor()
       state = ExecutorState.EXITED
       val message = "Command exited with code " + exitCode
+      // executor退出，要告诉worker
       worker.send(ExecutorStateChanged(appId, execId, state, Some(message), Some(exitCode)))
     } catch {
       case interrupted: InterruptedException =>
