@@ -295,6 +295,7 @@ private[spark] class Executor(
       Thread.currentThread.setContextClassLoader(replClassLoader)
       val ser = env.closureSerializer.newInstance()
       logInfo(s"Running $taskName (TID $taskId)")
+      // 更新状态
       execBackend.statusUpdate(taskId, TaskState.RUNNING, EMPTY_BYTE_BUFFER)
       var taskStart: Long = 0
       var taskStartCpu: Long = 0
@@ -304,8 +305,9 @@ private[spark] class Executor(
         // Must be set before updateDependencies() is called, in case fetching dependencies
         // requires access to properties contained within (e.g. for access control).
         Executor.taskDeserializationProps.set(taskDescription.properties)
-
+        // 下载task的依赖
         updateDependencies(taskDescription.addedFiles, taskDescription.addedJars)
+        // 反序列化出一个 Task 实例
         task = ser.deserialize[Task[Any]](
           taskDescription.serializedTask, Thread.currentThread.getContextClassLoader)
         task.localProperties = taskDescription.properties
@@ -331,6 +333,8 @@ private[spark] class Executor(
           threadMXBean.getCurrentThreadCpuTime
         } else 0L
         var threwException = true
+
+        //  拿到task的运行结果
         val value = try {
           val res = task.run(
             taskAttemptId = taskId,
@@ -380,6 +384,7 @@ private[spark] class Executor(
 
         val resultSer = env.serializer.newInstance()
         val beforeSerialization = System.currentTimeMillis()
+        // 把task的结果进行序列化，准备传回到driver
         val valueBytes = resultSer.serialize(value)
         val afterSerialization = System.currentTimeMillis()
 
@@ -399,18 +404,23 @@ private[spark] class Executor(
         // Note: accumulator updates must be collected after TaskMetrics is updated
         val accumUpdates = task.collectAccumulatorUpdates()
         // TODO: do not serialize value twice
+
+        // 把值转成 DirectTaskResult
         val directResult = new DirectTaskResult(valueBytes, accumUpdates)
         val serializedDirectResult = ser.serialize(directResult)
         val resultSize = serializedDirectResult.limit
 
         // directSend = sending directly back to the driver
         val serializedResult: ByteBuffer = {
+          // 对结果值数据的长度作判断，超过范围就直接丢弃
+          // spark.driver.maxResultSize 默认是1g，超过1G，直接丢弃
           if (maxResultSize > 0 && resultSize > maxResultSize) {
             logWarning(s"Finished $taskName (TID $taskId). Result is larger than maxResultSize " +
               s"(${Utils.bytesToString(resultSize)} > ${Utils.bytesToString(maxResultSize)}), " +
               s"dropping it.")
             ser.serialize(new IndirectTaskResult[Any](TaskResultBlockId(taskId), resultSize))
           } else if (resultSize > maxDirectResultSize) {
+            // 先放入blockManager,然后让调用者通过网络来获取
             val blockId = TaskResultBlockId(taskId)
             env.blockManager.putBytes(
               blockId,
@@ -426,6 +436,7 @@ private[spark] class Executor(
         }
 
         setTaskFinishedAndClearInterruptStatus()
+        // 回调CoarseGrainedExecutorBackend.statusUpdate()
         execBackend.statusUpdate(taskId, TaskState.FINISHED, serializedResult)
 
       } catch {
@@ -679,10 +690,14 @@ private[spark] class Executor(
     synchronized {
       // Fetch missing dependencies
       for ((name, timestamp) <- newFiles if currentFiles.getOrElse(name, -1L) < timestamp) {
+
         logInfo("Fetching " + name + " with timestamp " + timestamp)
+
         // Fetch file with useCache mode, close cache for local mode.
+        // 下载需要的文件
         Utils.fetchFile(name, new File(SparkFiles.getRootDirectory()), conf,
           env.securityManager, hadoopConf, timestamp, useCache = !isLocal)
+
         currentFiles(name) = timestamp
       }
       for ((name, timestamp) <- newJars) {

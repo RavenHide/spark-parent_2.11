@@ -132,7 +132,9 @@ final class BypassMergeSortShuffleWriter<K, V> extends ShuffleWriter<K, V> {
     final long openStartTime = System.nanoTime();
     partitionWriters = new DiskBlockObjectWriter[numPartitions];
     partitionWriterSegments = new FileSegment[numPartitions];
+    // 初始化partitionWriters
     for (int i = 0; i < numPartitions; i++) {
+      // 随机创建一个 shuffleBlockId，然后生成一个 "temp_shuffle_" + shuffleBlockId的文件
       final Tuple2<TempShuffleBlockId, File> tempShuffleBlockIdPlusFile =
         blockManager.diskBlockManager().createTempShuffleBlock();
       final File file = tempShuffleBlockIdPlusFile._2();
@@ -144,13 +146,14 @@ final class BypassMergeSortShuffleWriter<K, V> extends ShuffleWriter<K, V> {
     // the disk, and can take a long time in aggregate when we open many files, so should be
     // included in the shuffle write time.
     writeMetrics.incWriteTime(System.nanoTime() - openStartTime);
-
+    // 开始遍历record，然后根据key所在的partition 来决定使用哪个writer来写到对应的文件上
     while (records.hasNext()) {
       final Product2<K, V> record = records.next();
       final K key = record._1();
       partitionWriters[partitioner.getPartition(key)].write(key, record._2());
     }
 
+    // 把各个文件的引用对象和文件偏移量通过 segmentFile 对象来记录
     for (int i = 0; i < numPartitions; i++) {
       final DiskBlockObjectWriter writer = partitionWriters[i];
       partitionWriterSegments[i] = writer.commitAndGet();
@@ -160,6 +163,7 @@ final class BypassMergeSortShuffleWriter<K, V> extends ShuffleWriter<K, V> {
     File output = shuffleBlockResolver.getDataFile(shuffleId, mapId);
     File tmp = Utils.tempFileWith(output);
     try {
+        // 把分区的文件全部写入到 tmp 文件里面，并返回每个分区文件对应的长度
       partitionLengths = writePartitionedFile(tmp);
       shuffleBlockResolver.writeIndexFileAndCommit(shuffleId, mapId, partitionLengths, tmp);
     } finally {
@@ -177,7 +181,7 @@ final class BypassMergeSortShuffleWriter<K, V> extends ShuffleWriter<K, V> {
 
   /**
    * Concatenate all of the per-partition files into a single combined file.
-   *
+   * 把所有的partition 文件 合并成一个 文件
    * @return array of lengths, in bytes, of each partition of the file (used by map output tracker).
    */
   private long[] writePartitionedFile(File outputFile) throws IOException {

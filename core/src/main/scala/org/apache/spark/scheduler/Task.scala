@@ -86,10 +86,11 @@ private[spark] abstract class Task[T](
       localProperties,
       metricsSystem,
       metrics)
-    TaskContext.setTaskContext(context)
+    TaskContext.setTaskContext(context) // 把context 设置为 Threadlocal 类型的变量
     taskThread = Thread.currentThread()
 
     if (_reasonIfKilled != null) {
+      // 使 执行task 的线程 taskThread 进入 interrupt状态
       kill(interruptThread = false, _reasonIfKilled)
     }
 

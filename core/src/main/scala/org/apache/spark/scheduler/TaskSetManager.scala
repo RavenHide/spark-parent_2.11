@@ -708,6 +708,7 @@ private[spark] class TaskSetManager(
     * Marks a task as successful and notifies the DAGScheduler that the task has ended.
     */
   def handleSuccessfulTask(tid: Long, result: DirectTaskResult[_]): Unit = {
+    // 对完成的task进行一些处理
     val info = taskInfos(tid)
     val index = info.index
     info.markFinished(TaskState.FINISHED, clock.getTimeMillis())
@@ -718,15 +719,18 @@ private[spark] class TaskSetManager(
 
     // Kill any other attempts for the same task (since those are unnecessary now that one
     // attempt completed successfully).
+    // 杀死同个task的其它taskAttempts
     for (attemptInfo <- taskAttempts(index) if attemptInfo.running) {
       logInfo(s"Killing attempt ${attemptInfo.attemptNumber} for task ${attemptInfo.id} " +
         s"in stage ${taskSet.id} (TID ${attemptInfo.taskId}) on ${attemptInfo.host} " +
         s"as the attempt ${info.attemptNumber} succeeded on ${info.host}")
+
       sched.backend.killTask(
         attemptInfo.taskId,
         attemptInfo.executorId,
         interruptThread = true,
         reason = "another attempt succeeded")
+
     }
     if (!successful(index)) {
       tasksSuccessful += 1

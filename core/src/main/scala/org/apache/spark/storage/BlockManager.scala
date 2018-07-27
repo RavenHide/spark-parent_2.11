@@ -1031,13 +1031,13 @@ private[spark] class BlockManager(
       classTag: ClassTag[T],
       tellMaster: Boolean = true,
       keepReadLock: Boolean = false): Option[PartiallyUnrolledIterator[T]] = {
-    // doPutIterator方法的核心在于doPut方法, {}里面时doPut的putBody方法
+    // doPutIterator方法的核心在于doPut方法{}里面时doPut的putBody方法
     doPut(blockId, level, classTag, tellMaster = tellMaster, keepReadLock = keepReadLock) { info =>
       /*
         这个putBody的流程主要有：
         注:info 为None 说明这个BlockId已有BlockInfo
         1.根据存储策略，(如果BlockId不存在BlockInfo)来把BlockInfo存到内存或者磁盘
-        2.1.如果BlockInfo存放成功，就把BlockInfo的status报告给master，然后再把status更新给TaskMetris, 并且返回None
+        2.1.如果BlockInfo存放成功，就把BlockInfo的status报告给BlockManagerMaster，然后再把status更新给TaskMetris, 并且返回None
         2.2 存放不成功返回PartiallyUnrolledIterator
         3. 如果副本数量 > 1， 就进行副本复制
        */

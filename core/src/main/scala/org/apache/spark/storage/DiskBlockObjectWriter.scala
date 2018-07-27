@@ -181,6 +181,7 @@ private[spark] class DiskBlockObjectWriter(
 
       val pos = channel.position()
       val fileSegment = new FileSegment(file, committedPosition, pos - committedPosition)
+      // 更新起始偏移量
       committedPosition = pos
       // In certain compression codecs, more bytes are written after streams are closed
       writeMetrics.incBytesWritten(committedPosition - reportedPosition)

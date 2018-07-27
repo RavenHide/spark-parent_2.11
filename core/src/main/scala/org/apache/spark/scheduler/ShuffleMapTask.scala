@@ -94,11 +94,13 @@ private[spark] class ShuffleMapTask(
     var writer: ShuffleWriter[Any, Any] = null
     try {
       // 调用shuffleManager的shufflWeriter来进行
-
       val manager = SparkEnv.get.shuffleManager
       writer = manager.getWriter[Any, Any](dep.shuffleHandle, partitionId, context)
+
       // 因为这里的逻辑在executor里面执行，所以这里的 rdd 只是一个分区
+      // writer 拿到rdd 的运算结果，并对结果进行持久化
       writer.write(rdd.iterator(partition, context).asInstanceOf[Iterator[_ <: Product2[Any, Any]]])
+      // 返回一个Status，标志writer是否完成执行的任务
       writer.stop(success = true).get
     } catch {
       case e: Exception =>

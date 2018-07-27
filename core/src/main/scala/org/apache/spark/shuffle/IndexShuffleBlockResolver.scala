@@ -138,6 +138,7 @@ private[spark] class IndexShuffleBlockResolver(
       mapId: Int,
       lengths: Array[Long],
       dataTmp: File): Unit = {
+    // 获得索引文件
     val indexFile = getIndexFile(shuffleId, mapId)
     val indexTmp = Utils.tempFileWith(indexFile)
     try {
@@ -145,6 +146,7 @@ private[spark] class IndexShuffleBlockResolver(
       Utils.tryWithSafeFinally {
         // We take in lengths of each block, need to convert it to offsets.
         var offset = 0L
+        // 把索引写到dataTmp
         out.writeLong(offset)
         for (length <- lengths) {
           offset += length
@@ -158,6 +160,7 @@ private[spark] class IndexShuffleBlockResolver(
       // There is only one IndexShuffleBlockResolver per executor, this synchronization make sure
       // the following check and rename are atomic.
       synchronized {
+        // 拿到每个分区的数据长度
         val existingLengths = checkIndexAndDataFile(indexFile, dataFile, lengths.length)
         if (existingLengths != null) {
           // Another attempt for the same task has already written our map outputs successfully,
@@ -167,7 +170,7 @@ private[spark] class IndexShuffleBlockResolver(
             dataTmp.delete()
           }
           indexTmp.delete()
-        } else {
+        } else {// 第一次执行从这里开始
           // This is the first successful attempt in writing the map outputs for this task,
           // so override any existing index and data files with the ones we wrote.
           if (indexFile.exists()) {
